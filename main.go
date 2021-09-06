@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -25,17 +26,26 @@ func singleJoiningSlash(a, b string) string {
 	return a + b
 }
 
+
 // NewSegmentReverseProxy is adapted from the httputil.NewSingleHostReverseProxy
 // method, modified to dynamically redirect to different servers (CDN or Tracking API)
 // based on the incoming request, and sets the host of the request to the host of of
 // the destination URL.
 func NewSegmentReverseProxy(cdn *url.URL, trackingAPI *url.URL) http.Handler {
 	director := func(req *http.Request) {
+
 		// Figure out which server to redirect to based on the incoming request.
 		var target *url.URL
-		{if strings.HasPrefix(req.URL.String(), "/v1/projects") || strings.HasPrefix(req.URL.String(), "/analytics.js/v1") || strings.HasPrefix(req.URL.String(), "/analytics-next/bundles") || strings.HasPrefix(req.URL.String(), "/next-integrations/") {
+		if strings.HasPrefix(req.URL.String(), "/v1/projects") || strings.HasPrefix(req.URL.String(), "/analytics.js/v1") || strings.HasPrefix(req.URL.String(), "/analytics-next/bundles") || strings.HasPrefix(req.URL.String(), "/next-integrations/") {
 			target = cdn
 		} else {
+			
+			// Print full request for debugging purposes
+			requestDump, err := httputil.DumpRequest(req, true)
+			if err != nil {
+  				fmt.Println(err)
+			}
+			fmt.Println(string(requestDump))
 			target = trackingAPI
 		}
 
