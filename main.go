@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -40,12 +39,7 @@ func NewSegmentReverseProxy(cdn *url.URL, trackingAPI *url.URL) http.Handler {
 			target = cdn
 		} else {
 			
-			// Print full request for debugging purposes
-			requestDump, err := httputil.DumpRequest(req, true)
-			if err != nil {
-  				fmt.Println(err)
-			}
-			fmt.Println(string(requestDump))
+			
 			target = trackingAPI
 		}
 
