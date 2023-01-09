@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -24,6 +25,24 @@ func singleJoiningSlash(a, b string) string {
 	}
 	return a + b
 }
+
+func isBot(req *http.Request, bots []string) bool {
+
+	for _, ua := range bots {
+        if strings.Contains(req.UserAgent(), ua) {
+            return true
+        }
+    }
+    return false
+}
+
+//  func 
+
+var bots []string= []string{ "curl2",
+	"googlebot",
+	"yahoo! slurp",
+	"bingbot",
+	"yandex"}
 
 
 // NewSegmentReverseProxy is adapted from the httputil.NewSingleHostReverseProxy
@@ -79,5 +98,19 @@ func main() {
 		log.Printf("serving proxy at port %v\n", *port)
 	}
 
-	log.Fatal(http.ListenAndServe(":"+*port, proxy))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+
+        if isBot(r, bots) {
+            // pass the request to the reverse proxy
+			var userAgent= r.UserAgent()
+			message := fmt.Sprintf("Ignored request with userAgent %s", userAgent)
+			log.Println(message)
+			w.WriteHeader(http.StatusOK)
+			return
+            
+        } else {
+			proxy.ServeHTTP(w, r)
+        }
+    })
+	log.Fatal(http.ListenAndServe(":"+*port, nil))
 }
