@@ -103,7 +103,11 @@ func main() {
         if isBot(r, bots) {
             // pass the request to the reverse proxy
 			var userAgent= r.UserAgent()
-			message := fmt.Sprintf("Ignored request with userAgent %s", userAgent)
+			requestDump, err := httputil.DumpRequest(r, true)
+			if err != nil {
+  				fmt.Println(err)
+			}
+			message := fmt.Sprintf("Ignored request with userAgent %s and full request %s", userAgent, string(requestDump))
 			log.Println(message)
 			w.WriteHeader(http.StatusOK)
 			return
