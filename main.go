@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -24,6 +25,54 @@ func singleJoiningSlash(a, b string) string {
 	}
 	return a + b
 }
+
+func isBot(req *http.Request, bots []string) bool {
+
+	for _, ua := range bots {
+        if strings.Contains(req.UserAgent(), ua) {
+            return true
+        }
+    }
+    return false
+}
+
+var bots []string= []string{ "kive-bot-tester",
+	"googlebot",
+	"yahoo! slurp",
+	"bingbot",
+	"yandex",
+	"baiduspider",
+	"facebookexternalhit",
+	"twitterbot",
+	"rogerbot",
+	"linkedinbot",
+	"embedly",
+	"quora link preview",
+	"showyoubot",
+	"outbrain",
+	"pinterest/0.",
+	"developers.google.com/+/web/snippet",
+	"slackbot",
+	"vkshare",
+	"w3c_validator",
+	"redditbot",
+	"applebot",
+	"whatsapp",
+	"flipboard",
+	"tumblr",
+	"bitlybot",
+	"skypeuripreview",
+	"nuzzel",
+	"discordbot",
+	"google page speed",
+	"qwantify",
+	"pinterestbot",
+	"bitrix link preview",
+	"xing-contenttabreceiver",
+	"chrome-lighthouse",
+	"telegrambot",
+	"ahrefsbot",
+	"ahrefssiteaudit",}
 
 
 // NewSegmentReverseProxy is adapted from the httputil.NewSingleHostReverseProxy
@@ -79,5 +128,23 @@ func main() {
 		log.Printf("serving proxy at port %v\n", *port)
 	}
 
-	log.Fatal(http.ListenAndServe(":"+*port, proxy))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+
+        if isBot(r, bots) {
+            // pass the request to the reverse proxy
+			var userAgent= r.UserAgent()
+			requestDump, err := httputil.DumpRequest(r, true)
+			if err != nil {
+  				fmt.Println(err)
+			}
+			message := fmt.Sprintf("Ignored request with userAgent %s and full request %s", userAgent, string(requestDump))
+			log.Println(message)
+			w.WriteHeader(http.StatusOK)
+			return
+            
+        } else {
+			proxy.ServeHTTP(w, r)
+        }
+    })
+	log.Fatal(http.ListenAndServe(":"+*port, nil))
 }
