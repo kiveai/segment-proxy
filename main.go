@@ -72,7 +72,8 @@ var bots []string= []string{ "kive-bot-tester",
 	"chrome-lighthouse",
 	"telegrambot",
 	"ahrefsbot",
-	"ahrefssiteaudit",}
+	"ahrefssiteaudit",
+	"Prerender"}
 
 
 // NewSegmentReverseProxy is adapted from the httputil.NewSingleHostReverseProxy
