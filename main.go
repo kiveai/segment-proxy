@@ -36,8 +36,6 @@ func isBot(req *http.Request, bots []string) bool {
     return false
 }
 
-//  func 
-
 var bots []string= []string{ "kive-bot-tester",
 	"googlebot",
 	"yahoo! slurp",
