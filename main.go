@@ -38,11 +38,43 @@ func isBot(req *http.Request, bots []string) bool {
 
 //  func 
 
-var bots []string= []string{ "curl2",
+var bots []string= []string{ "kive-bot-tester",
 	"googlebot",
 	"yahoo! slurp",
 	"bingbot",
-	"yandex"}
+	"yandex",
+	"baiduspider",
+	"facebookexternalhit",
+	"twitterbot",
+	"rogerbot",
+	"linkedinbot",
+	"embedly",
+	"quora link preview",
+	"showyoubot",
+	"outbrain",
+	"pinterest/0.",
+	"developers.google.com/+/web/snippet",
+	"slackbot",
+	"vkshare",
+	"w3c_validator",
+	"redditbot",
+	"applebot",
+	"whatsapp",
+	"flipboard",
+	"tumblr",
+	"bitlybot",
+	"skypeuripreview",
+	"nuzzel",
+	"discordbot",
+	"google page speed",
+	"qwantify",
+	"pinterestbot",
+	"bitrix link preview",
+	"xing-contenttabreceiver",
+	"chrome-lighthouse",
+	"telegrambot",
+	"ahrefsbot",
+	"ahrefssiteaudit",}
 
 
 // NewSegmentReverseProxy is adapted from the httputil.NewSingleHostReverseProxy
