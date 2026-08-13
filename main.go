@@ -90,6 +90,24 @@ type bodyReadCloser struct {
 	io.Closer
 }
 
+// streamBody puts back the bytes already read, so the transport sees the same
+// stream, and any same failure, it would have seen without buffering.
+func streamBody(req *http.Request, read []byte) {
+	req.Body = bodyReadCloser{io.MultiReader(bytes.NewReader(read), req.Body), req.Body}
+}
+
+// readBody reads one byte past the cap so the caller can tell a body that just
+// fits from one that is too large. A declared length within the cap is trusted
+// only to size the buffer, which keeps a tracking payload to one allocation.
+func readBody(req *http.Request) ([]byte, error) {
+	if n := req.ContentLength; n > 0 && n <= maxBufferedBody {
+		body := make([]byte, n)
+		read, err := io.ReadFull(req.Body, body)
+		return body[:read], err
+	}
+	return ioutil.ReadAll(io.LimitReader(req.Body, maxBufferedBody+1))
+}
+
 // bufferRequestBody reads the request body into memory and sets Request.GetBody
 // so the HTTP/2 transport can transparently replay the request. Without GetBody,
 // a graceful shutdown GOAWAY from the upstream server aborts every in-flight
@@ -102,14 +120,11 @@ func bufferRequestBody(req *http.Request) {
 	if req.Body == nil || req.GetBody != nil {
 		return
 	}
-	body, err := ioutil.ReadAll(io.LimitReader(req.Body, maxBufferedBody+1))
-	if err != nil {
-		// Leave the body untouched so the transport surfaces the read failure
-		// and ReverseProxy logs it once, rather than forwarding a short payload.
-		return
-	}
-	if int64(len(body)) > maxBufferedBody {
-		req.Body = bodyReadCloser{io.MultiReader(bytes.NewReader(body), req.Body), req.Body}
+	body, err := readBody(req)
+	if err != nil || int64(len(body)) > maxBufferedBody {
+		// The body either cannot be replayed or cannot be read, so hand the
+		// transport the original stream instead.
+		streamBody(req, body)
 		return
 	}
 	req.Body.Close()

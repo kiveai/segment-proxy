@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type SegmentServer int
@@ -95,26 +97,79 @@ func TestBufferRequestBody(t *testing.T) {
 	}
 }
 
-func TestBufferRequestBodyLeavesLargeBodyStreaming(t *testing.T) {
-	payload := bytes.Repeat([]byte("a"), maxBufferedBody+1024)
-	req := httptest.NewRequest(http.MethodPost, "/v1/t", bytes.NewReader(payload))
-	contentLength := req.ContentLength
+// TestBufferRequestBodyCapBoundary pins the edge of the size cap: a body that
+// exactly fits is buffered, one byte more is left streaming, and neither is
+// truncated on the way through.
+func TestBufferRequestBodyCapBoundary(t *testing.T) {
+	cases := []struct {
+		size     int
+		buffered bool
+	}{
+		{maxBufferedBody - 1, true},
+		{maxBufferedBody, true},
+		{maxBufferedBody + 1, false},
+	}
+	for _, c := range cases {
+		payload := bytes.Repeat([]byte("a"), c.size)
+		req := httptest.NewRequest(http.MethodPost, "/v1/t", bytes.NewReader(payload))
+
+		bufferRequestBody(req)
+
+		if buffered := req.GetBody != nil; buffered != c.buffered {
+			t.Errorf("size %v: expected buffered=%v, got %v", c.size, c.buffered, buffered)
+		}
+		if req.ContentLength != int64(c.size) {
+			t.Errorf("size %v: expected ContentLength %v, got %v", c.size, c.size, req.ContentLength)
+		}
+		body, err := ioutil.ReadAll(req.Body)
+		if err != nil {
+			t.Fatalf("size %v: %v", c.size, err)
+		}
+		if !bytes.Equal(body, payload) {
+			t.Errorf("size %v: expected the body to stay intact, got %v bytes", c.size, len(body))
+		}
+	}
+}
+
+// failingBody yields a prefix and then fails, standing in for a client that
+// disconnects partway through its upload.
+type failingBody struct {
+	prefix []byte
+	sent   bool
+}
+
+func (b *failingBody) Read(p []byte) (int, error) {
+	if !b.sent {
+		b.sent = true
+		return copy(p, b.prefix), nil
+	}
+	return 0, errBodyRead
+}
+
+func (b *failingBody) Close() error { return nil }
+
+var errBodyRead = errors.New("simulated client disconnect")
+
+func TestBufferRequestBodyKeepsConsumedBytesOnReadError(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/t", nil)
+	req.Body = &failingBody{prefix: []byte("hello")}
+	req.ContentLength = 11
 
 	bufferRequestBody(req)
 
 	if req.GetBody != nil {
-		t.Error("expected GetBody to stay nil so an oversized body is not held in memory")
+		t.Error("expected GetBody to stay nil when the body could not be read")
 	}
-	if req.ContentLength != contentLength {
-		t.Errorf("expected ContentLength to stay %v, got %v", contentLength, req.ContentLength)
+	if req.ContentLength != 11 {
+		t.Errorf("expected ContentLength to stay 11, got %v", req.ContentLength)
 	}
 
 	body, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		t.Fatal(err)
+	if string(body) != "hello" {
+		t.Errorf("expected the bytes already consumed to be handed back, got %q", string(body))
 	}
-	if !bytes.Equal(body, payload) {
-		t.Errorf("expected the oversized body to be readable in full: got %v bytes, want %v", len(body), len(payload))
+	if err != errBodyRead {
+		t.Errorf("expected the original read error to reach the transport, got %v", err)
 	}
 }
 
@@ -233,9 +288,13 @@ func TestProxyForwardsOversizedPostBody(t *testing.T) {
 		t.Errorf("expected status %v, got %v", http.StatusOK, resp.StatusCode)
 	}
 
-	body := <-received
-	if !bytes.Equal(body, payload) {
-		t.Errorf("expected the Tracking API to receive all %v bytes, got %v", len(payload), len(body))
+	select {
+	case body := <-received:
+		if !bytes.Equal(body, payload) {
+			t.Errorf("expected the Tracking API to receive all %v bytes, got %v", len(payload), len(body))
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the Tracking API never received the request")
 	}
 }
 
