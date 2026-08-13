@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -76,12 +79,35 @@ var bots []string= []string{ "kive-bot-tester",
 	"Prerender"}
 
 
+// bufferRequestBody reads the request body into memory and sets Request.GetBody
+// so the HTTP/2 transport can transparently replay the request. Without GetBody,
+// a graceful shutdown GOAWAY from the upstream server aborts every in-flight
+// request whose body has already been written, which surfaces to the browser as
+// a 502. Tracking payloads are small, so buffering them is cheap.
+func bufferRequestBody(req *http.Request) {
+	if req.Body == nil || req.GetBody != nil {
+		return
+	}
+	body, err := ioutil.ReadAll(req.Body)
+	req.Body.Close()
+	if err != nil {
+		log.Printf("failed to buffer request body for replay: %v", err)
+		return
+	}
+	req.Body = ioutil.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+	req.GetBody = func() (io.ReadCloser, error) {
+		return ioutil.NopCloser(bytes.NewReader(body)), nil
+	}
+}
+
 // NewSegmentReverseProxy is adapted from the httputil.NewSingleHostReverseProxy
 // method, modified to dynamically redirect to different servers (CDN or Tracking API)
 // based on the incoming request, and sets the host of the request to the host of of
 // the destination URL.
 func NewSegmentReverseProxy(cdn *url.URL, trackingAPI *url.URL) http.Handler {
 	director := func(req *http.Request) {
+		bufferRequestBody(req)
 
 		// Figure out which server to redirect to based on the incoming request.
 		var target *url.URL
