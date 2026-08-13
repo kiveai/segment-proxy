@@ -1,0 +1,17 @@
+{
+  "name": "segment-proxy",
+  "install": "go mod download && go build ./...",
+  "terminals": [
+    {
+      "name": "proxy",
+      "command": "go run main.go -port 8080 -debug",
+      "description": "Segment reverse proxy on port 8080 with debug access logging enabled."
+    }
+  ],
+  "ports": [
+    {
+      "name": "proxy",
+      "port": 8080
+    }
+  ]
+}
