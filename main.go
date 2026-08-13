@@ -79,21 +79,40 @@ var bots []string= []string{ "kive-bot-tester",
 	"Prerender"}
 
 
+// maxBufferedBody caps how much of a request body is held in memory for replay.
+// Segment's largest documented payload is a 500 KB batch, so anything past this
+// is not tracking traffic and must not be allowed to exhaust the instance.
+const maxBufferedBody = 1 << 20
+
+// bodyReadCloser pairs a wrapped reader with the original body's Closer.
+type bodyReadCloser struct {
+	io.Reader
+	io.Closer
+}
+
 // bufferRequestBody reads the request body into memory and sets Request.GetBody
 // so the HTTP/2 transport can transparently replay the request. Without GetBody,
 // a graceful shutdown GOAWAY from the upstream server aborts every in-flight
 // request whose body has already been written, which surfaces to the browser as
-// a 502. Tracking payloads are small, so buffering them is cheap.
+// a 502. The transport only replays requests the upstream never processed;
+// recheck net/http's canRetryError for that guarantee when the Go version in the
+// Dockerfile changes. Bodies past maxBufferedBody keep streaming, and so keep the
+// old GOAWAY behavior, rather than being held in memory.
 func bufferRequestBody(req *http.Request) {
 	if req.Body == nil || req.GetBody != nil {
 		return
 	}
-	body, err := ioutil.ReadAll(req.Body)
-	req.Body.Close()
+	body, err := ioutil.ReadAll(io.LimitReader(req.Body, maxBufferedBody+1))
 	if err != nil {
-		log.Printf("failed to buffer request body for replay: %v", err)
+		// Leave the body untouched so the transport surfaces the read failure
+		// and ReverseProxy logs it once, rather than forwarding a short payload.
 		return
 	}
+	if int64(len(body)) > maxBufferedBody {
+		req.Body = bodyReadCloser{io.MultiReader(bytes.NewReader(body), req.Body), req.Body}
+		return
+	}
+	req.Body.Close()
 	req.Body = ioutil.NopCloser(bytes.NewReader(body))
 	req.ContentLength = int64(len(body))
 	req.GetBody = func() (io.ReadCloser, error) {
